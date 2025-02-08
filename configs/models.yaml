@@ -1,0 +1,24 @@
+models:
+  Normal:
+    api_base: "http://internal-model-service/claude"
+    default_params:
+      temperature: 0.7
+      max_tokens: 4096
+
+  reasoner:
+    api_base: "http://internal-model-service/r1"
+    special_handling:
+      disabled_params: ["temperature", "top_p"]
+      response_format: 
+        reasoning_path: "$.choices[0].message.reasoning_content"
+        content_path: "$.choices[0].message.content"
+
+pipelines:
+  hybrid_v1:
+    stage_sequence:
+      - claude_preprocess
+      - r1_thinking
+      - claude_postprocess
+    error_handling:
+      retry_policy: exponential_backoff
+      max_attempts: 3
