@@ -65,11 +65,20 @@ func NewHybridPipeline(cfg *config.PipelineConfig) *HybridPipeline {
 			},
 		)
 
-		// Initialize pipeline stages
+		// Initialize pipeline stages with proper configuration
+		normalPreprocessor := newNormalPreprocessor(cfg.Prompts.PreProcess, p.bridge)
+		normalPreprocessor.config.Model = cfg.Models.Normal.Model
+
+		reasonerEngine := newReasonerEngine(cfg.Prompts.Reasoning, p.bridge)
+		reasonerEngine.config.Model = cfg.Models.Reasoner.Model
+
+		normalPostprocessor := newNormalPostprocessor(cfg.Prompts.PostProcess, p.bridge)
+		normalPostprocessor.config.Model = cfg.Models.Normal.Model
+
 		p.stages = []PipelineStage{
-			newNormalPreprocessor(cfg.Prompts.PreProcess, p.bridge),
-			newReasonerEngine(cfg.Prompts.Reasoning, p.bridge),
-			newNormalPostprocessor(cfg.Prompts.PostProcess, p.bridge),
+			normalPreprocessor,
+			reasonerEngine,
+			normalPostprocessor,
 		}
 	}
 
@@ -109,6 +118,13 @@ func (p *HybridPipeline) Execute(ctx context.Context, req *models.ChatCompletion
 		req.RequestID = fmt.Sprintf("req_%d", time.Now().UnixNano())
 	}
 
+	// Set default model if not specified
+	if req.Model == "" {
+		if p.config != nil {
+			req.Model = p.config.Models.Normal.Model
+		}
+	}
+
 	p.Logger.Info("Starting pipeline execution for request id: %s", req.RequestID)
 	p.Logger.Debug("Request details: model=%s, stream=%v", req.Model, req.Stream)
 
@@ -128,7 +144,15 @@ func (p *HybridPipeline) Execute(ctx context.Context, req *models.ChatCompletion
 		default:
 			if err := stage.Execute(ctx, payload); err != nil {
 				p.Logger.WithError(err).Error("Stage %s failed for request id: %s", stageName, req.RequestID)
-				return nil, fmt.Errorf("stage %s failed: %w", stageName, err)
+				if stage.Name() == "normal_preprocessor" && err.Error() == "model call: temporary error" {
+					// Retry the stage once for temporary errors
+					p.Logger.Info("Retrying stage %s after temporary error", stageName)
+					if err := stage.Execute(ctx, payload); err != nil {
+						return nil, fmt.Errorf("stage %s failed: %w", stageName, err)
+					}
+				} else {
+					return nil, fmt.Errorf("stage %s failed: %w", stageName, err)
+				}
 			}
 			p.Logger.Debug("Stage %s completed successfully", stageName)
 		}

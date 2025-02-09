@@ -21,8 +21,8 @@ type PromptsConfig struct {
 
 // ModelsConfig contains configurations for different models
 type ModelsConfig struct {
-	Normal   ModelConfig `yaml:"normal"`
-	Reasoner ModelConfig `yaml:"reasoner"`
+	Normal   ModelConfig `yaml:"Normal"`
+	Reasoner ModelConfig `yaml:"Reasoner"`
 }
 
 // ModelConfig contains configuration for a specific model
@@ -39,11 +39,9 @@ func LoadConfig(path string) (*PipelineConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	var cfg PipelineConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-
 	return &cfg, nil
 }
