@@ -4,15 +4,21 @@ import (
 	"context"
 	"testing"
 
+	"github.com/codeium/deepempower/internal/logger"
 	"github.com/codeium/deepempower/internal/mocks"
 	"github.com/codeium/deepempower/internal/modelbridge"
 	"github.com/codeium/deepempower/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 
+func init() {
+	logger.InitLogger(logger.INFO, "test")
+}
+
 func TestNormalPreprocessor_Execute(t *testing.T) {
 	mockClient := &mocks.MockModelClient{
 		CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+			assert.Equal(t, "gpt-3.5-turbo", req.Model)
 			return &models.ChatCompletionResponse{
 				Choices: []models.ChatCompletionChoice{
 					{Message: models.ChatCompletionMessage{Content: "preprocessed"}},
@@ -23,11 +29,13 @@ func TestNormalPreprocessor_Execute(t *testing.T) {
 
 	bridge := &modelbridge.ModelBridge{
 		NormalClient: mockClient,
+		Logger:       logger.GetLogger().WithComponent("test_bridge"),
 	}
 
 	processor := newNormalPreprocessor("template ${input}", bridge)
 	payload := &Payload{
 		OriginalRequest: &models.ChatCompletionRequest{
+			Model: "gpt-3.5-turbo",
 			Messages: []models.ChatCompletionMessage{
 				{Role: "user", Content: "test"},
 			},
@@ -61,6 +69,9 @@ func TestReasonerEngine_Execute(t *testing.T) {
 
 	mockClient := &mocks.MockModelClient{
 		CompleteStreamFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (<-chan *models.ChatCompletionResponse, error) {
+			assert.Equal(t, "gpt-4", req.Model)
+			assert.True(t, req.Stream)
+
 			ch := make(chan *models.ChatCompletionResponse)
 			go func() {
 				defer close(ch)
@@ -74,11 +85,13 @@ func TestReasonerEngine_Execute(t *testing.T) {
 
 	bridge := &modelbridge.ModelBridge{
 		ReasonerClient: mockClient,
+		Logger:         logger.GetLogger().WithComponent("test_bridge"),
 	}
 
 	processor := newReasonerEngine("template ${input}", bridge)
 	payload := &Payload{
 		OriginalRequest: &models.ChatCompletionRequest{
+			Model: "gpt-4",
 			Messages: []models.ChatCompletionMessage{
 				{Role: "user", Content: "test"},
 			},
@@ -95,6 +108,7 @@ func TestReasonerEngine_Execute(t *testing.T) {
 func TestNormalPostprocessor_Execute(t *testing.T) {
 	mockClient := &mocks.MockModelClient{
 		CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+			assert.Equal(t, "gpt-3.5-turbo", req.Model)
 			return &models.ChatCompletionResponse{
 				Choices: []models.ChatCompletionChoice{
 					{Message: models.ChatCompletionMessage{Content: "final response"}},
@@ -105,16 +119,18 @@ func TestNormalPostprocessor_Execute(t *testing.T) {
 
 	bridge := &modelbridge.ModelBridge{
 		NormalClient: mockClient,
+		Logger:       logger.GetLogger().WithComponent("test_bridge"),
 	}
 
 	processor := newNormalPostprocessor("template ${input}", bridge)
 	payload := &Payload{
 		OriginalRequest: &models.ChatCompletionRequest{
+			Model: "gpt-3.5-turbo",
 			Messages: []models.ChatCompletionMessage{
 				{Role: "user", Content: "test"},
 			},
 		},
-		IntermContent:   "reasoned",
+		IntermContent:  "reasoned",
 		ReasoningChain: []string{"step 1", "step 2"},
 	}
 

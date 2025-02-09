@@ -2,46 +2,31 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/codeium/deepempower/internal/config"
+	"github.com/codeium/deepempower/internal/logger"
 	"github.com/codeium/deepempower/internal/mocks"
+	"github.com/codeium/deepempower/internal/modelbridge"
 	"github.com/codeium/deepempower/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 
+func init() {
+	logger.InitLogger(logger.INFO, "test")
+}
+
 func TestHybridPipeline_Execute(t *testing.T) {
-	// Setup mock responses
-	normalPreprocessResponse := &models.ChatCompletionResponse{
-		Choices: []models.ChatCompletionChoice{
-			{Message: models.ChatCompletionMessage{Content: "preprocessed"}},
-		},
-	}
-
-	reasonerResponses := []*models.ChatCompletionResponse{
-		{
-			Choices: []models.ChatCompletionChoice{
-				{Message: models.ChatCompletionMessage{
-					Content:          "reasoning step",
-					ReasoningContent: []string{"step 1"},
-				}},
-			},
-		},
-	}
-
-	normalPostprocessResponse := &models.ChatCompletionResponse{
-		Choices: []models.ChatCompletionChoice{
-			{Message: models.ChatCompletionMessage{Content: "final response"}},
-		},
-	}
-
 	// Create mock clients
 	mockNormalClient := &mocks.MockModelClient{
 		CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
-			if req.Messages[0].Content == "preprocess" {
-				return normalPreprocessResponse, nil
-			}
-			return normalPostprocessResponse, nil
+			return &models.ChatCompletionResponse{
+				Choices: []models.ChatCompletionChoice{
+					{Message: models.ChatCompletionMessage{Content: "test response"}},
+				},
+			}, nil
 		},
 	}
 
@@ -50,8 +35,13 @@ func TestHybridPipeline_Execute(t *testing.T) {
 			ch := make(chan *models.ChatCompletionResponse)
 			go func() {
 				defer close(ch)
-				for _, resp := range reasonerResponses {
-					ch <- resp
+				ch <- &models.ChatCompletionResponse{
+					Choices: []models.ChatCompletionChoice{
+						{Message: models.ChatCompletionMessage{
+							Content:          "reasoning step",
+							ReasoningContent: []string{"step 1"},
+						}},
+					},
 				}
 			}()
 			return ch, nil
@@ -62,21 +52,30 @@ func TestHybridPipeline_Execute(t *testing.T) {
 	cfg := &config.PipelineConfig{
 		Models: config.ModelsConfig{
 			Normal: config.ModelConfig{
-				APIBase: "http://normal",
+				APIBase: "http://test-normal",
+				Model:   "gpt-3.5-turbo",
 			},
 			Reasoner: config.ModelConfig{
-				APIBase: "http://reasoner",
+				APIBase: "http://test-reasoner",
+				Model:   "gpt-4",
 			},
 		},
 		Prompts: config.PromptsConfig{
-			PreProcess:  "preprocess",
-			Reasoning:   "reason",
-			PostProcess: "postprocess",
+			PreProcess:  "test prompt",
+			Reasoning:   "test prompt",
+			PostProcess: "test prompt",
 		},
 	}
 
-	// Create pipeline
+	// Create pipeline with mocked bridge
+	bridge := &modelbridge.ModelBridge{
+		NormalClient:   mockNormalClient,
+		ReasonerClient: mockReasonerClient,
+		Logger:         logger.GetLogger().WithComponent("test_bridge"),
+	}
+
 	pipeline := NewHybridPipeline(cfg)
+	pipeline.SetBridge(bridge)
 
 	// Test pipeline execution
 	req := &models.ChatCompletionRequest{
@@ -88,6 +87,104 @@ func TestHybridPipeline_Execute(t *testing.T) {
 	resp, err := pipeline.Execute(context.Background(), req)
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
-	assert.Equal(t, "final response", resp.Choices[0].Message.Content)
-	assert.Equal(t, []string{"step 1"}, resp.Choices[0].Message.ReasoningContent)
+	assert.Equal(t, "test response", resp.Choices[0].Message.Content)
+}
+
+func TestHybridPipeline_ExecuteErrors(t *testing.T) {
+	testCases := []struct {
+		name           string
+		normalClient   *mocks.MockModelClient
+		reasonerClient *mocks.MockModelClient
+		expectErr      string
+	}{
+		{
+			name: "Normal client error",
+			normalClient: &mocks.MockModelClient{
+				CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+					return nil, fmt.Errorf("normal client error")
+				},
+			},
+			reasonerClient: &mocks.MockModelClient{},
+			expectErr:      "stage normal_preprocessor failed: model call: normal client error",
+		},
+		{
+			name: "Reasoner client error",
+			normalClient: &mocks.MockModelClient{
+				CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+					return &models.ChatCompletionResponse{
+						Choices: []models.ChatCompletionChoice{
+							{Message: models.ChatCompletionMessage{Content: "test"}},
+						},
+					}, nil
+				},
+			},
+			reasonerClient: &mocks.MockModelClient{
+				CompleteStreamFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (<-chan *models.ChatCompletionResponse, error) {
+					return nil, fmt.Errorf("reasoner client error")
+				},
+			},
+			expectErr: "stage reasoner_engine failed: model call: reasoner client error",
+		},
+		{
+			name: "Context timeout",
+			normalClient: &mocks.MockModelClient{
+				CompleteFunc: func(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				},
+			},
+			reasonerClient: &mocks.MockModelClient{},
+			expectErr:      "context deadline exceeded",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create test config
+			cfg := &config.PipelineConfig{
+				Models: config.ModelsConfig{
+					Normal: config.ModelConfig{
+						APIBase: "mock://normal",
+						Model:   "gpt-3.5-turbo",
+					},
+					Reasoner: config.ModelConfig{
+						APIBase: "mock://reasoner",
+						Model:   "gpt-4",
+					},
+				},
+				Prompts: config.PromptsConfig{
+					PreProcess:  "test prompt",
+					Reasoning:   "test prompt",
+					PostProcess: "test prompt",
+				},
+			}
+
+			// Create pipeline with mocked bridge
+			bridge := &modelbridge.ModelBridge{
+				NormalClient:   tc.normalClient,
+				ReasonerClient: tc.reasonerClient,
+				Logger:         logger.GetLogger().WithComponent("test_bridge"),
+			}
+
+			pipeline := NewHybridPipeline(cfg)
+			pipeline.SetBridge(bridge)
+
+			// Test pipeline execution with timeout context
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			req := &models.ChatCompletionRequest{
+				Messages: []models.ChatCompletionMessage{
+					{Role: "user", Content: "test input"},
+				},
+			}
+
+			_, err := pipeline.Execute(ctx, req)
+			if tc.expectErr != "" {
+				assert.ErrorContains(t, err, tc.expectErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

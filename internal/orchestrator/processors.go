@@ -15,14 +15,14 @@ import (
 type NormalPreprocessor struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
-	logger         *logger.Logger
+	Logger         *logger.Logger
 }
 
 func newNormalPreprocessor(prompt string, bridge *modelbridge.ModelBridge) *NormalPreprocessor {
 	return &NormalPreprocessor{
 		promptTemplate: prompt,
 		bridge:         bridge,
-		logger:         logger.GetLogger().WithComponent("normal_preprocessor"),
+		Logger:         logger.GetLogger().WithComponent("normal_preprocessor"),
 	}
 }
 
@@ -31,12 +31,10 @@ func (p *NormalPreprocessor) Name() string {
 }
 
 func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
-	p.logger.Debug("Starting preprocessing stage")
-
 	// Parse prompt template
 	tmpl, err := template.New("prompt").Parse(p.promptTemplate)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to parse prompt template")
+		p.Logger.WithError(err).Error("Failed to parse prompt template")
 		return fmt.Errorf("parse template: %w", err)
 	}
 
@@ -45,14 +43,13 @@ func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 	if err := tmpl.Execute(&buf, map[string]interface{}{
 		"UserInput": data.OriginalRequest.Messages[len(data.OriginalRequest.Messages)-1].Content,
 	}); err != nil {
-		p.logger.WithError(err).Error("Failed to execute prompt template")
+		p.Logger.WithError(err).Error("Failed to execute prompt template")
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	p.logger.Debug("Prepared prompt for Normal model")
-
-	// Create model request
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.OriginalRequest.Messages[len(data.OriginalRequest.Messages)-1].Content},
@@ -60,16 +57,15 @@ func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 	}
 
 	// Call model through bridge
-	p.logger.Debug("Calling Normal model")
 	resp, err := p.bridge.CallNormal(ctx, req)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to call Normal model")
+		p.Logger.WithError(err).Error("Failed to call Normal model")
 		return fmt.Errorf("model call: %w", err)
 	}
 
 	// Store structured input for next stage
 	data.IntermContent = resp.Choices[0].Message.Content
-	p.logger.Debug("Preprocessing completed successfully")
+	p.Logger.Debug("Preprocessing completed successfully")
 	return nil
 }
 
@@ -77,14 +73,14 @@ func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 type ReasonerEngine struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
-	logger         *logger.Logger
+	Logger         *logger.Logger
 }
 
 func newReasonerEngine(prompt string, bridge *modelbridge.ModelBridge) *ReasonerEngine {
 	return &ReasonerEngine{
 		promptTemplate: prompt,
 		bridge:         bridge,
-		logger:         logger.GetLogger().WithComponent("reasoner_engine"),
+		Logger:         logger.GetLogger().WithComponent("reasoner_engine"),
 	}
 }
 
@@ -93,12 +89,10 @@ func (p *ReasonerEngine) Name() string {
 }
 
 func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
-	p.logger.Debug("Starting reasoning stage")
-
 	// Parse prompt template
 	tmpl, err := template.New("prompt").Parse(p.promptTemplate)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to parse prompt template")
+		p.Logger.WithError(err).Error("Failed to parse prompt template")
 		return fmt.Errorf("parse template: %w", err)
 	}
 
@@ -107,26 +101,25 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 	if err := tmpl.Execute(&buf, map[string]interface{}{
 		"StructuredInput": data.IntermContent,
 	}); err != nil {
-		p.logger.WithError(err).Error("Failed to execute prompt template")
+		p.Logger.WithError(err).Error("Failed to execute prompt template")
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	p.logger.Debug("Prepared prompt for Reasoner model")
-
-	// Create model request
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.IntermContent},
 		},
+		Stream: true,
 	}
 
 	// Call model with streaming through bridge
-	p.logger.Debug("Starting streaming call to Reasoner model")
 	respChan, err := p.bridge.CallReasonerStream(ctx, req)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to start streaming from Reasoner model")
-		return fmt.Errorf("model call: %w", err)
+		p.Logger.WithError(err).Error("Failed to start streaming from Reasoner model")
+		return fmt.Errorf("model call: %w", err) // Removed "start stream:" prefix
 	}
 
 	// Process streaming response
@@ -138,7 +131,7 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 			if len(resp.Choices[0].Message.ReasoningContent) > 0 {
 				data.ReasoningChain = append(data.ReasoningChain, resp.Choices[0].Message.ReasoningContent...)
 				reasoningCount++
-				p.logger.Debug("Received reasoning step %d", reasoningCount)
+				p.Logger.Debug("Received reasoning step %d", reasoningCount)
 			}
 			// Update content
 			lastContent = resp.Choices[0].Message.Content
@@ -147,7 +140,7 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 
 	// Store final content
 	data.IntermContent = lastContent
-	p.logger.Debug("Reasoning completed with %d steps", reasoningCount)
+	p.Logger.Debug("Reasoning completed with %d steps", reasoningCount)
 	return nil
 }
 
@@ -155,14 +148,14 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 type NormalPostprocessor struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
-	logger         *logger.Logger
+	Logger         *logger.Logger
 }
 
 func newNormalPostprocessor(prompt string, bridge *modelbridge.ModelBridge) *NormalPostprocessor {
 	return &NormalPostprocessor{
 		promptTemplate: prompt,
 		bridge:         bridge,
-		logger:         logger.GetLogger().WithComponent("normal_postprocessor"),
+		Logger:         logger.GetLogger().WithComponent("normal_postprocessor"),
 	}
 }
 
@@ -171,12 +164,10 @@ func (p *NormalPostprocessor) Name() string {
 }
 
 func (p *NormalPostprocessor) Execute(ctx context.Context, data *Payload) error {
-	p.logger.Debug("Starting postprocessing stage")
-
 	// Parse prompt template
 	tmpl, err := template.New("prompt").Parse(p.promptTemplate)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to parse prompt template")
+		p.Logger.WithError(err).Error("Failed to parse prompt template")
 		return fmt.Errorf("parse template: %w", err)
 	}
 
@@ -186,14 +177,13 @@ func (p *NormalPostprocessor) Execute(ctx context.Context, data *Payload) error 
 		"ReasoningChain":     data.ReasoningChain,
 		"IntermediateResult": data.IntermContent,
 	}); err != nil {
-		p.logger.WithError(err).Error("Failed to execute prompt template")
+		p.Logger.WithError(err).Error("Failed to execute prompt template")
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	p.logger.Debug("Prepared prompt for Normal model with %d reasoning steps", len(data.ReasoningChain))
-
-	// Create model request
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.IntermContent},
@@ -201,15 +191,14 @@ func (p *NormalPostprocessor) Execute(ctx context.Context, data *Payload) error 
 	}
 
 	// Call model through bridge
-	p.logger.Debug("Calling Normal model for final response")
 	resp, err := p.bridge.CallNormal(ctx, req)
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to call Normal model")
+		p.Logger.WithError(err).Error("Failed to call Normal model")
 		return fmt.Errorf("model call: %w", err)
 	}
 
 	// Store final content
 	data.FinalContent = resp.Choices[0].Message.Content
-	p.logger.Debug("Postprocessing completed successfully")
+	p.Logger.Debug("Postprocessing completed successfully")
 	return nil
 }

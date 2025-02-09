@@ -34,39 +34,71 @@ type HybridPipeline struct {
 	stages []PipelineStage
 	config *config.PipelineConfig
 	bridge *modelbridge.ModelBridge
-	logger *logger.Logger
+	Logger *logger.Logger
 }
 
 // NewHybridPipeline creates a new hybrid pipeline with the specified configuration
 func NewHybridPipeline(cfg *config.PipelineConfig) *HybridPipeline {
-	// Initialize logger
+	// Initialize logger with default level
+	logger.InitLogger(logger.INFO, "pipeline")
 	log := logger.GetLogger().WithComponent("pipeline")
 	log.Info("Creating new hybrid pipeline")
 
-	// Create model bridge
-	bridge := modelbridge.NewModelBridge(
-		clients.ModelClientConfig{
-			APIBase:       cfg.Models.Normal.APIBase,
-			DefaultParams: cfg.Models.Normal.DefaultParams,
-		},
-		clients.ModelClientConfig{
-			APIBase:        cfg.Models.Reasoner.APIBase,
-			DisabledParams: cfg.Models.Reasoner.DisabledParams,
-		},
-	)
-
-	log.Debug("Model bridge created with configs: normal=%v, reasoner=%v", 
-		cfg.Models.Normal, cfg.Models.Reasoner)
-
-	return &HybridPipeline{
+	// Create pipeline instance
+	p := &HybridPipeline{
 		config: cfg,
-		bridge: bridge,
-		logger: log,
-		stages: []PipelineStage{
-			newNormalPreprocessor(cfg.Prompts.PreProcess, bridge),
-			newReasonerEngine(cfg.Prompts.Reasoning, bridge),
-			newNormalPostprocessor(cfg.Prompts.PostProcess, bridge),
-		},
+		Logger: log,
+	}
+
+	// Create model bridge if config is provided
+	if cfg != nil {
+		p.bridge = modelbridge.NewModelBridge(
+			clients.ModelClientConfig{
+				APIBase:       cfg.Models.Normal.APIBase,
+				Model:         cfg.Models.Normal.Model,
+				DefaultParams: cfg.Models.Normal.DefaultParams,
+			},
+			clients.ModelClientConfig{
+				APIBase:        cfg.Models.Reasoner.APIBase,
+				Model:          cfg.Models.Reasoner.Model,
+				DisabledParams: cfg.Models.Reasoner.DisabledParams,
+			},
+		)
+
+		// Initialize pipeline stages
+		p.stages = []PipelineStage{
+			newNormalPreprocessor(cfg.Prompts.PreProcess, p.bridge),
+			newReasonerEngine(cfg.Prompts.Reasoning, p.bridge),
+			newNormalPostprocessor(cfg.Prompts.PostProcess, p.bridge),
+		}
+	}
+
+	return p
+}
+
+// SetBridge replaces the current model bridge with a new one (mainly for testing)
+func (p *HybridPipeline) SetBridge(bridge *modelbridge.ModelBridge) {
+	p.bridge = bridge
+	if p.stages == nil {
+		// Initialize stages for testing if they don't exist
+		p.stages = []PipelineStage{
+			newNormalPreprocessor("test_pre_process", bridge),
+			newReasonerEngine("test_reasoning", bridge),
+			newNormalPostprocessor("test_post_process", bridge),
+		}
+	} else {
+		// Update bridge in existing stages
+		for _, stage := range p.stages {
+			if preprocessor, ok := stage.(*NormalPreprocessor); ok {
+				preprocessor.bridge = bridge
+			}
+			if engine, ok := stage.(*ReasonerEngine); ok {
+				engine.bridge = bridge
+			}
+			if postprocessor, ok := stage.(*NormalPostprocessor); ok {
+				postprocessor.bridge = bridge
+			}
+		}
 	}
 }
 
@@ -77,8 +109,8 @@ func (p *HybridPipeline) Execute(ctx context.Context, req *models.ChatCompletion
 		req.RequestID = fmt.Sprintf("req_%d", time.Now().UnixNano())
 	}
 
-	p.logger.Info("Starting pipeline execution for request id: %s", req.RequestID)
-	p.logger.Debug("Request details: model=%s, stream=%v", req.Model, req.Stream)
+	p.Logger.Info("Starting pipeline execution for request id: %s", req.RequestID)
+	p.Logger.Debug("Request details: model=%s, stream=%v", req.Model, req.Stream)
 
 	payload := &Payload{
 		OriginalRequest: req,
@@ -87,28 +119,28 @@ func (p *HybridPipeline) Execute(ctx context.Context, req *models.ChatCompletion
 
 	for _, stage := range p.stages {
 		stageName := stage.Name()
-		p.logger.Debug("Executing stage: %s", stageName)
+		p.Logger.Debug("Executing stage: %s", stageName)
 
 		select {
 		case <-ctx.Done():
-			p.logger.Warn("Pipeline execution cancelled for request id: %s", req.RequestID)
+			p.Logger.Warn("Pipeline execution cancelled for request id: %s", req.RequestID)
 			return nil, ctx.Err()
 		default:
 			if err := stage.Execute(ctx, payload); err != nil {
-				p.logger.WithError(err).Error("Stage %s failed for request id: %s", stageName, req.RequestID)
+				p.Logger.WithError(err).Error("Stage %s failed for request id: %s", stageName, req.RequestID)
 				return nil, fmt.Errorf("stage %s failed: %w", stageName, err)
 			}
-			p.logger.Debug("Stage %s completed successfully", stageName)
+			p.Logger.Debug("Stage %s completed successfully", stageName)
 		}
 	}
 
-	p.logger.Info("Pipeline execution completed successfully for request id: %s", req.RequestID)
+	p.Logger.Info("Pipeline execution completed successfully for request id: %s", req.RequestID)
 	return p.buildResponse(payload), nil
 }
 
 // buildResponse creates the final API response
 func (p *HybridPipeline) buildResponse(payload *Payload) *models.ChatCompletionResponse {
-	p.logger.Debug("Building final response with content length: %d", len(payload.FinalContent))
+	p.Logger.Debug("Building final response with content length: %d", len(payload.FinalContent))
 
 	return &models.ChatCompletionResponse{
 		Choices: []models.ChatCompletionChoice{

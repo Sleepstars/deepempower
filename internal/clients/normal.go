@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
 	"github.com/codeium/deepempower/internal/models"
 )
 
@@ -24,6 +26,11 @@ func NewNormalClient(config ModelClientConfig) *NormalClient {
 }
 
 func (c *NormalClient) Complete(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+	// Set model from config if not specified
+	if req.Model == "" {
+		req.Model = c.config.Model
+	}
+
 	// Prepare request body
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -31,7 +38,12 @@ func (c *NormalClient) Complete(ctx context.Context, req *models.ChatCompletionR
 	}
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.config.APIBase, bytes.NewReader(body))
+	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
+	// Ensure URL has scheme
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -59,6 +71,11 @@ func (c *NormalClient) Complete(ctx context.Context, req *models.ChatCompletionR
 }
 
 func (c *NormalClient) CompleteStream(ctx context.Context, req *models.ChatCompletionRequest) (<-chan *models.ChatCompletionResponse, error) {
+	// Set model from config if not specified
+	if req.Model == "" {
+		req.Model = c.config.Model
+	}
+
 	resultChan := make(chan *models.ChatCompletionResponse)
 
 	// Create request with streaming flag
@@ -71,7 +88,12 @@ func (c *NormalClient) CompleteStream(ctx context.Context, req *models.ChatCompl
 	}
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.config.APIBase, bytes.NewReader(body))
+	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
+	// Ensure URL has scheme
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

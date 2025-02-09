@@ -12,59 +12,77 @@ import (
 
 // ModelBridge handles model-specific logic and provides a unified interface
 type ModelBridge struct {
-	normalClient   clients.ModelClient
-	reasonerClient clients.ModelClient
-	logger         *logger.Logger
+	NormalClient   clients.ModelClient
+	ReasonerClient clients.ModelClient
+	Logger         *logger.Logger // Changed to exported field
 	mu             sync.RWMutex
 }
 
 // NewModelBridge creates a new model bridge instance
 func NewModelBridge(normalCfg, reasonerCfg clients.ModelClientConfig) *ModelBridge {
+	// Initialize logger with default level if not already initialized
+	if logger.GetLogger() == nil {
+		logger.InitLogger(logger.INFO, "model_bridge")
+	}
 	log := logger.GetLogger().WithComponent("model_bridge")
 	log.Info("Creating new model bridge")
 
 	return &ModelBridge{
-		normalClient:   clients.NewNormalClient(normalCfg),
-		reasonerClient: clients.NewReasonerClient(reasonerCfg),
-		logger:         log,
+		NormalClient:   clients.NewNormalClient(normalCfg),
+		ReasonerClient: clients.NewReasonerClient(reasonerCfg),
+		Logger:         log,
 	}
 }
 
 // CallNormal sends a request to the Normal model
-func (b *ModelBridge) CallNormal(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+func (b *ModelBridge) CallNormal(ctx context.Context, req *models.ChatCompletionRequest) (resp *models.ChatCompletionResponse, err error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Ensure model name is correct
-	req.Model = "Normal"
-	b.logger.Debug("Calling Normal model with %d messages", len(req.Messages))
-	
-	resp, err := b.normalClient.Complete(ctx, req)
+	// Add panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			b.Logger.Error("Recovered from panic in CallNormal: %v", r)
+			err = fmt.Errorf("runtime error: %v", r)
+			resp = nil
+		}
+	}()
+
+	b.Logger.Debug("Calling Normal model with %d messages", len(req.Messages))
+
+	resp, err = b.NormalClient.Complete(ctx, req)
 	if err != nil {
-		b.logger.WithError(err).Error("Normal model call failed")
+		b.Logger.WithError(err).Error("Normal model call failed")
 		return nil, err
 	}
 
-	b.logger.Debug("Normal model call completed successfully")
+	b.Logger.Debug("Normal model call completed successfully")
 	return resp, nil
 }
 
 // CallReasoner sends a request to the Reasoner model
-func (b *ModelBridge) CallReasoner(ctx context.Context, req *models.ChatCompletionRequest) (*models.ChatCompletionResponse, error) {
+func (b *ModelBridge) CallReasoner(ctx context.Context, req *models.ChatCompletionRequest) (resp *models.ChatCompletionResponse, err error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Ensure model name is correct
-	req.Model = "Reasoner"
-	b.logger.Debug("Calling Reasoner model with %d messages", len(req.Messages))
-	
-	resp, err := b.reasonerClient.Complete(ctx, req)
+	// Add panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			b.Logger.Error("Recovered from panic in CallReasoner: %v", r)
+			err = fmt.Errorf("runtime error: %v", r)
+			resp = nil
+		}
+	}()
+
+	b.Logger.Debug("Calling Reasoner model with %d messages", len(req.Messages))
+
+	resp, err = b.ReasonerClient.Complete(ctx, req)
 	if err != nil {
-		b.logger.WithError(err).Error("Reasoner model call failed")
+		b.Logger.WithError(err).Error("Reasoner model call failed")
 		return nil, err
 	}
 
-	b.logger.Debug("Reasoner model call completed successfully")
+	b.Logger.Debug("Reasoner model call completed successfully")
 	return resp, nil
 }
 
@@ -73,15 +91,15 @@ func (b *ModelBridge) CallReasonerStream(ctx context.Context, req *models.ChatCo
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Ensure model name and streaming flag are correct
-	req.Model = "Reasoner"
+	b.Logger.Debug("Starting streaming call to Reasoner model with %d messages", len(req.Messages))
+
+	// Ensure stream flag is set
 	req.Stream = true
 
-	b.logger.Debug("Starting streaming call to Reasoner model with %d messages", len(req.Messages))
-	respChan, err := b.reasonerClient.CompleteStream(ctx, req)
+	respChan, err := b.ReasonerClient.CompleteStream(ctx, req)
 	if err != nil {
-		b.logger.WithError(err).Error("Failed to start Reasoner model streaming")
-		return nil, fmt.Errorf("start stream: %w", err)
+		b.Logger.WithError(err).Error("Failed to start Reasoner model streaming")
+		return nil, err // Don't wrap the error again
 	}
 
 	// Create a new channel for filtered responses
@@ -114,7 +132,7 @@ func (b *ModelBridge) CallReasonerStream(ctx context.Context, req *models.ChatCo
 			}
 		}
 
-		b.logger.Debug("Streaming completed: total=%d, content=%d, reasoning=%d",
+		b.Logger.Debug("Streaming completed: total=%d, content=%d, reasoning=%d",
 			responseCount, contentCount, reasoningCount)
 	}()
 

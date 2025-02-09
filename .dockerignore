@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+.github
+
+# Project files
+bin/
+test/
+*.test
+*.out
+
+# IDE directories
+.idea/
+.vscode/
+
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Temporary files
+*.log
+*.tmp
+
+# Development configs
+.env
+.env.local
+*.dev.yaml
+
+# Documentation
+README.md
+docs/
+LICENSE
+
+# Debug files
+__debug_bin

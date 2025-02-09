@@ -4,22 +4,22 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/codeium/deepempower/internal/config"
 	"github.com/codeium/deepempower/internal/models"
 	"github.com/codeium/deepempower/internal/orchestrator"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	// TODO: Load configuration from file
 	cfg := &config.PipelineConfig{}
-	
+
 	// Create pipeline
 	pipeline := orchestrator.NewHybridPipeline(cfg)
 
 	// Setup router
 	r := gin.Default()
-	
+
 	// Chat completions endpoint
 	r.POST("/v1/chat/completions", func(c *gin.Context) {
 		var req models.ChatCompletionRequest

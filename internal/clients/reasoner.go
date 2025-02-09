@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
 	"github.com/codeium/deepempower/internal/models"
 )
 
@@ -44,6 +46,11 @@ func (c *ReasonerClient) Complete(ctx context.Context, req *models.ChatCompletio
 	// Remove unsupported parameters
 	c.filterDisabledParams(req)
 
+	// Set model from config if not specified
+	if req.Model == "" {
+		req.Model = c.config.Model
+	}
+
 	// Prepare request body
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -51,7 +58,12 @@ func (c *ReasonerClient) Complete(ctx context.Context, req *models.ChatCompletio
 	}
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.config.APIBase, bytes.NewReader(body))
+	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
+	// Ensure URL has scheme
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -101,6 +113,11 @@ func (c *ReasonerClient) CompleteStream(ctx context.Context, req *models.ChatCom
 	// Remove unsupported parameters
 	c.filterDisabledParams(req)
 
+	// Set model from config if not specified
+	if req.Model == "" {
+		req.Model = c.config.Model
+	}
+
 	resultChan := make(chan *models.ChatCompletionResponse)
 
 	// Create request with streaming flag
@@ -113,7 +130,12 @@ func (c *ReasonerClient) CompleteStream(ctx context.Context, req *models.ChatCom
 	}
 
 	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.config.APIBase, bytes.NewReader(body))
+	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
+	// Ensure URL has scheme
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		url = "http://" + url
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
