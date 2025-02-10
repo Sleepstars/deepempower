@@ -89,6 +89,9 @@ func TestReasonerEngine_Execute(t *testing.T) {
 	}
 
 	processor := newReasonerEngine("template ${input}", bridge)
+	// Set the model configuration for testing
+	processor.config.Model = "gpt-4"
+
 	payload := &Payload{
 		OriginalRequest: &models.ChatCompletionRequest{
 			Model: "gpt-4",
