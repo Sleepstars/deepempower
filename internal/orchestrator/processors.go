@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/codeium/deepempower/internal/config" // 导入 config 包
 	"github.com/codeium/deepempower/internal/logger"
 	"github.com/codeium/deepempower/internal/modelbridge"
 	"github.com/codeium/deepempower/internal/models"
-	"github.com/codeium/deepempower/internal/config" // 导入 config 包
 )
 
 // NormalPreprocessor implements the preprocessing stage using Normal model
@@ -36,7 +36,7 @@ func (p *NormalPreprocessor) Name() string {
 func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 	// Parse prompt template
 	tmpl, err := template.New("prompt").Parse(p.promptTemplate)
-	if (err != nil) {
+	if err != nil {
 		p.Logger.WithError(err).Error("Failed to parse prompt template")
 		return fmt.Errorf("parse template: %w", err)
 	}
