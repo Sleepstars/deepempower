@@ -110,9 +110,9 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	// Create model request with the same model as the original request
+	// Create model request using the model from config
 	req := &models.ChatCompletionRequest{
-		Model: data.OriginalRequest.Model,
+		Model: p.config.Model, // 使用配置中的模型
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.IntermContent},

@@ -90,22 +90,42 @@ func (p *HybridPipeline) SetBridge(bridge *modelbridge.ModelBridge) {
 	p.bridge = bridge
 	if p.stages == nil {
 		// Initialize stages for testing if they don't exist
+		normalPreprocessor := newNormalPreprocessor("test_pre_process", bridge)
+		reasonerEngine := newReasonerEngine("test_reasoning", bridge)
+		normalPostprocessor := newNormalPostprocessor("test_post_process", bridge)
+
+		// Set model configurations from pipeline config
+		if p.config != nil {
+			normalPreprocessor.config.Model = p.config.Models.Normal.Model
+			reasonerEngine.config.Model = p.config.Models.Reasoner.Model
+			normalPostprocessor.config.Model = p.config.Models.Normal.Model
+		}
+
 		p.stages = []PipelineStage{
-			newNormalPreprocessor("test_pre_process", bridge),
-			newReasonerEngine("test_reasoning", bridge),
-			newNormalPostprocessor("test_post_process", bridge),
+			normalPreprocessor,
+			reasonerEngine,
+			normalPostprocessor,
 		}
 	} else {
-		// Update bridge in existing stages
+		// Update bridge and config in existing stages
 		for _, stage := range p.stages {
 			if preprocessor, ok := stage.(*NormalPreprocessor); ok {
 				preprocessor.bridge = bridge
+				if p.config != nil {
+					preprocessor.config.Model = p.config.Models.Normal.Model
+				}
 			}
 			if engine, ok := stage.(*ReasonerEngine); ok {
 				engine.bridge = bridge
+				if p.config != nil {
+					engine.config.Model = p.config.Models.Reasoner.Model
+				}
 			}
 			if postprocessor, ok := stage.(*NormalPostprocessor); ok {
 				postprocessor.bridge = bridge
+				if p.config != nil {
+					postprocessor.config.Model = p.config.Models.Normal.Model
+				}
 			}
 		}
 	}
