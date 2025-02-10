@@ -11,7 +11,7 @@ import (
 func TestLoadConfig(t *testing.T) {
 	// Create a temporary test config file
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "test_config.yaml")
+	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	testConfig := `models:
   Normal:

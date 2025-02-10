@@ -13,7 +13,7 @@ import (
 
 func main() {
 	// 解析命令行标志
-	configPath := flag.String("config", "/etc/deepempower/configs/test_config.yaml", "Path to the configuration file")
+	configPath := flag.String("config", "/app/config.yaml", "Path to the configuration file")
 	flag.Parse()
 
 	// Load configuration from file

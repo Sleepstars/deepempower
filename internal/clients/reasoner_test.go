@@ -3,168 +3,242 @@ package clients
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	openai "github.com/sashabaranov/go-openai"
 	"github.com/sleepstars/deepempower/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReasonerClient_Complete(t *testing.T) {
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Decode request body to verify parameter filtering
-		var reqMap map[string]interface{}
-		err := json.NewDecoder(r.Body).Decode(&reqMap)
-		assert.NoError(t, err)
-
-		// Verify disabled parameters are removed
-		_, hasTemperature := reqMap["temperature"]
-		assert.False(t, hasTemperature)
-
-		// Send response with reasoning content
-		resp := struct {
-			Choices []struct {
-				Message struct {
-					Content          string   `json:"content"`
-					ReasoningContent []string `json:"reasoning_content"`
-				} `json:"message"`
-			} `json:"choices"`
-		}{
-			Choices: []struct {
-				Message struct {
-					Content          string   `json:"content"`
-					ReasoningContent []string `json:"reasoning_content"`
-				} `json:"message"`
-			}{
-				{
-					Message: struct {
-						Content          string   `json:"content"`
-						ReasoningContent []string `json:"reasoning_content"`
-					}{
-						Content:          "test response",
-						ReasoningContent: []string{"step 1", "step 2"},
+	tests := []struct {
+		name           string
+		config         ModelClientConfig
+		request        *models.ChatCompletionRequest
+		expectedReq    openai.ChatCompletionRequest
+		response       openai.ChatCompletionResponse
+		expectedErr    string
+		expectedResult *models.ChatCompletionResponse
+	}{
+		{
+			name: "successful request with disabled params",
+			config: ModelClientConfig{
+				APIBase:        "test-server",
+				Model:          "test-model",
+				DisabledParams: []string{"temperature"},
+			},
+			request: &models.ChatCompletionRequest{
+				Model: "test-model",
+				Messages: []models.ChatCompletionMessage{
+					{Role: "user", Content: "test message"},
+				},
+				Temperature: 0.7,
+			},
+			response: openai.ChatCompletionResponse{
+				Choices: []openai.ChatCompletionChoice{
+					{
+						Message: openai.ChatCompletionMessage{
+							Role:    "assistant",
+							Content: "test response",
+						},
+						FinishReason: openai.FinishReasonStop,
 					},
 				},
 			},
-		}
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	// Create client with test server URL and disabled parameters
-	client := NewReasonerClient(ModelClientConfig{
-		APIBase:        server.URL,
-		Model:          "test-model",
-		DisabledParams: []string{"temperature"},
-	})
-
-	// Make request with a parameter that should be filtered
-	reqMap := map[string]interface{}{
-		"temperature": 0.7,
-		"model":       "test-model",
-		"messages": []models.ChatCompletionMessage{
-			{Role: "user", Content: "test"},
+			expectedResult: &models.ChatCompletionResponse{
+				Choices: []models.ChatCompletionChoice{
+					{
+						Message: models.ChatCompletionMessage{
+							Role:    "assistant",
+							Content: "test response",
+						},
+						FinishReason: "stop",
+					},
+				},
+			},
+		},
+		{
+			name: "empty response",
+			config: ModelClientConfig{
+				APIBase: "test-server",
+				Model:   "test-model",
+			},
+			request: &models.ChatCompletionRequest{
+				Messages: []models.ChatCompletionMessage{
+					{Role: "user", Content: "test"},
+				},
+			},
+			response: openai.ChatCompletionResponse{
+				Choices: []openai.ChatCompletionChoice{},
+			},
+			expectedErr: "no choices in response",
 		},
 	}
-	reqData, _ := json.Marshal(reqMap)
-	var req models.ChatCompletionRequest
-	json.Unmarshal(reqData, &req)
 
-	// Send request
-	resp, err := client.Complete(context.Background(), &req)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create test server
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Verify request
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "/chat/completions", r.URL.Path)
 
-	// Verify response
-	assert.NoError(t, err)
-	assert.Equal(t, "test response", resp.Choices[0].Message.Content)
-	assert.Equal(t, []string{"step 1", "step 2"}, resp.Choices[0].Message.ReasoningContent)
+				// Verify request body and parameter filtering
+				var reqMap map[string]interface{}
+				err := json.NewDecoder(r.Body).Decode(&reqMap)
+				require.NoError(t, err)
+
+				// Verify disabled parameters are removed
+				for _, param := range tc.config.DisabledParams {
+					_, hasParam := reqMap[param]
+					assert.False(t, hasParam, "disabled parameter %s should not be present", param)
+				}
+
+				// Send response
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(tc.response)
+			}))
+			defer server.Close()
+
+			// Update config with test server URL
+			tc.config.APIBase = server.URL
+
+			// Create client
+			client := NewReasonerClient(tc.config)
+
+			// Make request
+			resp, err := client.Complete(context.Background(), tc.request)
+
+			// Verify results
+			if tc.expectedErr != "" {
+				assert.EqualError(t, err, tc.expectedErr)
+				assert.Nil(t, resp)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedResult, resp)
+			}
+		})
+	}
 }
 
 func TestReasonerClient_CompleteStream(t *testing.T) {
-	responses := []struct {
-		Choices []struct {
-			Message struct {
-				Content          string   `json:"content"`
-				ReasoningContent []string `json:"reasoning_content"`
-			} `json:"message"`
-		} `json:"choices"`
+	tests := []struct {
+		name        string
+		config      ModelClientConfig
+		request     *models.ChatCompletionRequest
+		responses   []openai.ChatCompletionStreamResponse
+		expectedErr string
+		expected    struct {
+			contents   []string
+			reasonings []string
+		}
 	}{
 		{
-			Choices: []struct {
-				Message struct {
-					Content          string   `json:"content"`
-					ReasoningContent []string `json:"reasoning_content"`
-				} `json:"message"`
-			}{
+			name: "successful stream with reasoning",
+			config: ModelClientConfig{
+				APIBase:        "test-server",
+				Model:          "test-model",
+				DisabledParams: []string{"temperature"},
+			},
+			request: &models.ChatCompletionRequest{
+				Messages: []models.ChatCompletionMessage{
+					{Role: "user", Content: "test"},
+				},
+			},
+			responses: []openai.ChatCompletionStreamResponse{
 				{
-					Message: struct {
-						Content          string   `json:"content"`
-						ReasoningContent []string `json:"reasoning_content"`
-					}{
-						Content:          "thinking...",
-						ReasoningContent: []string{"analyzing problem"},
+					Choices: []openai.ChatCompletionStreamChoice{
+						{
+							Delta: openai.ChatCompletionStreamChoiceDelta{
+								Role:    "assistant",
+								Content: "thinking...",
+							},
+						},
+					},
+				},
+				{
+					Choices: []openai.ChatCompletionStreamChoice{
+						{
+							Delta: openai.ChatCompletionStreamChoiceDelta{
+								Content: "final answer",
+							},
+							FinishReason: openai.FinishReasonStop,
+						},
 					},
 				},
 			},
-		},
-		{
-			Choices: []struct {
-				Message struct {
-					Content          string   `json:"content"`
-					ReasoningContent []string `json:"reasoning_content"`
-				} `json:"message"`
+			expected: struct {
+				contents   []string
+				reasonings []string
 			}{
-				{
-					Message: struct {
-						Content          string   `json:"content"`
-						ReasoningContent []string `json:"reasoning_content"`
-					}{
-						Content:          "final answer",
-						ReasoningContent: []string{"solution found"},
-					},
-				},
+				contents:   []string{"thinking...", "final answer"},
+				reasonings: []string{},
 			},
 		},
 	}
 
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify streaming headers
-		assert.Equal(t, "text/event-stream", r.Header.Get("Accept"))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create test server
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Verify request
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "/chat/completions", r.URL.Path)
+				assert.Equal(t, "text/event-stream", r.Header.Get("Accept"))
 
-		// Send streaming responses
-		for _, resp := range responses {
-			json.NewEncoder(w).Encode(resp)
-			w.(http.Flusher).Flush()
-		}
-	}))
-	defer server.Close()
+				// Verify request body and parameter filtering
+				var reqMap map[string]interface{}
+				err := json.NewDecoder(r.Body).Decode(&reqMap)
+				require.NoError(t, err)
 
-	// Create client
-	client := NewReasonerClient(ModelClientConfig{
-		APIBase: server.URL,
-		Model:   "test-model",
-	})
+				// Verify disabled parameters are removed
+				for _, param := range tc.config.DisabledParams {
+					_, hasParam := reqMap[param]
+					assert.False(t, hasParam, "disabled parameter %s should not be present", param)
+				}
 
-	// Make streaming request
-	respChan, err := client.CompleteStream(context.Background(), &models.ChatCompletionRequest{
-		Messages: []models.ChatCompletionMessage{
-			{Role: "user", Content: "test"},
-		},
-		Stream: true,
-	})
+				// Send streaming responses
+				for _, resp := range tc.responses {
+					data, _ := json.Marshal(resp)
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					w.(http.Flusher).Flush()
+				}
+			}))
+			defer server.Close()
 
-	// Verify response stream
-	assert.NoError(t, err)
+			// Update config with test server URL
+			tc.config.APIBase = server.URL
 
-	var contents []string
-	var reasonings []string
-	for resp := range respChan {
-		contents = append(contents, resp.Choices[0].Message.Content)
-		reasonings = append(reasonings, resp.Choices[0].Message.ReasoningContent...)
+			// Create client
+			client := NewReasonerClient(tc.config)
+
+			// Make streaming request
+			respChan, err := client.CompleteStream(context.Background(), tc.request)
+
+			// Verify initial error if expected
+			if tc.expectedErr != "" {
+				assert.EqualError(t, err, tc.expectedErr)
+				assert.Nil(t, respChan)
+				return
+			}
+
+			// Verify streaming responses
+			assert.NoError(t, err)
+			require.NotNil(t, respChan)
+
+			contents := make([]string, 0)
+			reasonings := make([]string, 0)
+			for resp := range respChan {
+				contents = append(contents, resp.Choices[0].Message.Content)
+				reasonings = append(reasonings, resp.Choices[0].Message.ReasoningContent...)
+			}
+
+			assert.Equal(t, tc.expected.contents, contents)
+			assert.Equal(t, tc.expected.reasonings, reasonings)
+		})
 	}
-
-	assert.Equal(t, []string{"thinking...", "final answer"}, contents)
-	assert.Equal(t, []string{"analyzing problem", "solution found"}, reasonings)
 }

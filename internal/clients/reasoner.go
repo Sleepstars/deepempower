@@ -1,27 +1,32 @@
 package clients
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
+	openai "github.com/sashabaranov/go-openai"
 	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // ReasonerClient implements ModelClient for the Reasoner (R1) model
 type ReasonerClient struct {
 	config ModelClientConfig
-	client *http.Client
+	client *openai.Client
 }
 
 // NewReasonerClient creates a new Reasoner model client
 func NewReasonerClient(config ModelClientConfig) *ReasonerClient {
+	clientConfig := openai.DefaultConfig("")
+	clientConfig.BaseURL = config.APIBase
+	if !strings.HasPrefix(clientConfig.BaseURL, "http://") && !strings.HasPrefix(clientConfig.BaseURL, "https://") {
+		clientConfig.BaseURL = "http://" + clientConfig.BaseURL
+	}
+
 	return &ReasonerClient{
 		config: config,
-		client: &http.Client{},
+		client: openai.NewClientWithConfig(clientConfig),
 	}
 }
 
@@ -51,59 +56,39 @@ func (c *ReasonerClient) Complete(ctx context.Context, req *models.ChatCompletio
 		req.Model = c.config.Model
 	}
 
-	// Prepare request body
-	body, err := json.Marshal(req)
+	// Convert to openai request format
+	openaiReq := openai.ChatCompletionRequest{
+		Model:    req.Model,
+		Messages: make([]openai.ChatCompletionMessage, len(req.Messages)),
+	}
+
+	// Convert messages
+	for i, msg := range req.Messages {
+		openaiReq.Messages[i] = openai.ChatCompletionMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+
+	// Call OpenAI API
+	resp, err := c.client.CreateChatCompletion(ctx, openaiReq)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, fmt.Errorf("create chat completion: %w", err)
 	}
 
-	// Create HTTP request
-	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
-	// Ensure URL has scheme
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		url = "http://" + url
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Send request
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
 	}
 
-	// Parse response
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content          string   `json:"content"`
-				ReasoningContent []string `json:"reasoning_content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	// Convert to standard response format
+	// Convert response back to our format
 	return &models.ChatCompletionResponse{
 		Choices: []models.ChatCompletionChoice{
 			{
 				Message: models.ChatCompletionMessage{
-					Role:             "assistant",
-					Content:          result.Choices[0].Message.Content,
-					ReasoningContent: result.Choices[0].Message.ReasoningContent,
+					Role:    resp.Choices[0].Message.Role,
+					Content: resp.Choices[0].Message.Content,
 				},
-				FinishReason: "stop",
+				FinishReason: string(resp.Choices[0].FinishReason),
 			},
 		},
 	}, nil
@@ -118,72 +103,66 @@ func (c *ReasonerClient) CompleteStream(ctx context.Context, req *models.ChatCom
 		req.Model = c.config.Model
 	}
 
+	// Convert to openai request format
+	openaiReq := openai.ChatCompletionRequest{
+		Model:    req.Model,
+		Messages: make([]openai.ChatCompletionMessage, len(req.Messages)),
+		Stream:   true,
+	}
+
+	// Convert messages
+	for i, msg := range req.Messages {
+		openaiReq.Messages[i] = openai.ChatCompletionMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+
+	// Create stream
+	stream, err := c.client.CreateChatCompletionStream(ctx, openaiReq)
+	if err != nil {
+		return nil, fmt.Errorf("create chat completion stream: %w", err)
+	}
+
 	resultChan := make(chan *models.ChatCompletionResponse)
-
-	// Create request with streaming flag
-	req.Stream = true
-
-	// Prepare request body
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
-	// Ensure URL has scheme
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		url = "http://" + url
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	// Send request
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
 
 	// Start goroutine to read streaming response
 	go func() {
 		defer close(resultChan)
-		defer resp.Body.Close()
+		defer stream.Close()
 
-		decoder := json.NewDecoder(resp.Body)
+		var contentBuilder strings.Builder
+		var partialContent []string
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				var chunk struct {
-					Choices []struct {
-						Message struct {
-							Content          string   `json:"content"`
-							ReasoningContent []string `json:"reasoning_content"`
-						} `json:"message"`
-					} `json:"choices"`
-				}
-				if err := decoder.Decode(&chunk); err != nil {
+				resp, err := stream.Recv()
+				if err != nil {
 					// End of stream or error
 					return
 				}
 
-				// Convert to standard response format
-				resultChan <- &models.ChatCompletionResponse{
-					Choices: []models.ChatCompletionChoice{
-						{
-							Message: models.ChatCompletionMessage{
-								Role:             "assistant",
-								Content:          chunk.Choices[0].Message.Content,
-								ReasoningContent: chunk.Choices[0].Message.ReasoningContent,
+				if len(resp.Choices) > 0 && resp.Choices[0].Delta.Content != "" {
+					content := resp.Choices[0].Delta.Content
+					contentBuilder.WriteString(content)
+					partialContent = append(partialContent, content)
+
+					// Convert to standard response format
+					resultChan <- &models.ChatCompletionResponse{
+						Choices: []models.ChatCompletionChoice{
+							{
+								Message: models.ChatCompletionMessage{
+									Role:             resp.Choices[0].Delta.Role,
+									Content:          content,
+									ReasoningContent: []string{},
+								},
+								FinishReason: string(resp.Choices[0].FinishReason),
 							},
-							FinishReason: "stop",
 						},
-					},
+					}
 				}
 			}
 		}

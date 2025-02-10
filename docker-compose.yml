@@ -1,0 +1,12 @@
+services:
+  deepempower:
+    image: ghcr.io/sleepstars/deepempower:latest
+    container_name: deepempower
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${CONFIG_PATH:-./configs}:/app/config.yaml
+    environment:
+      - CONFIG_PATH=/etc/deepempower/configs
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
