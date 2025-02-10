@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/codeium/deepempower/internal/config"
 	"github.com/codeium/deepempower/internal/logger"
 	"github.com/codeium/deepempower/internal/modelbridge"
 	"github.com/codeium/deepempower/internal/models"
+	"github.com/codeium/deepempower/internal/config" // 导入 config 包
 )
 
 // NormalPreprocessor implements the preprocessing stage using Normal model
@@ -17,7 +17,7 @@ type NormalPreprocessor struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
 	Logger         *logger.Logger
-	config         *config.ModelConfig // Add config field
+	config         *config.ModelConfig // 添加 config 字段
 }
 
 func newNormalPreprocessor(prompt string, bridge *modelbridge.ModelBridge) *NormalPreprocessor {
@@ -25,7 +25,7 @@ func newNormalPreprocessor(prompt string, bridge *modelbridge.ModelBridge) *Norm
 		promptTemplate: prompt,
 		bridge:         bridge,
 		Logger:         logger.GetLogger().WithComponent("normal_preprocessor"),
-		config:         &config.ModelConfig{Model: "gpt-3.5-turbo"}, // Set default model
+		config:         &config.ModelConfig{}, // 初始化 config 字段
 	}
 }
 
@@ -36,7 +36,7 @@ func (p *NormalPreprocessor) Name() string {
 func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 	// Parse prompt template
 	tmpl, err := template.New("prompt").Parse(p.promptTemplate)
-	if err != nil {
+	if (err != nil) {
 		p.Logger.WithError(err).Error("Failed to parse prompt template")
 		return fmt.Errorf("parse template: %w", err)
 	}
@@ -50,9 +50,9 @@ func (p *NormalPreprocessor) Execute(ctx context.Context, data *Payload) error {
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	// Create model request with proper model
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
-		Model: p.config.Model, // Use config model
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.OriginalRequest.Messages[len(data.OriginalRequest.Messages)-1].Content},
@@ -77,7 +77,7 @@ type ReasonerEngine struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
 	Logger         *logger.Logger
-	config         *config.ModelConfig // Add config field
+	config         *config.ModelConfig // 添加 config 字段
 }
 
 func newReasonerEngine(prompt string, bridge *modelbridge.ModelBridge) *ReasonerEngine {
@@ -85,7 +85,7 @@ func newReasonerEngine(prompt string, bridge *modelbridge.ModelBridge) *Reasoner
 		promptTemplate: prompt,
 		bridge:         bridge,
 		Logger:         logger.GetLogger().WithComponent("reasoner_engine"),
-		config:         &config.ModelConfig{Model: "gpt-4"}, // Set default model
+		config:         &config.ModelConfig{}, // 初始化 config 字段
 	}
 }
 
@@ -110,9 +110,9 @@ func (p *ReasonerEngine) Execute(ctx context.Context, data *Payload) error {
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	// Create model request with proper model
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
-		Model: p.config.Model, // Use config model
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.IntermContent},
@@ -154,7 +154,7 @@ type NormalPostprocessor struct {
 	promptTemplate string
 	bridge         *modelbridge.ModelBridge
 	Logger         *logger.Logger
-	config         *config.ModelConfig
+	config         *config.ModelConfig // 添加 config 字段
 }
 
 func newNormalPostprocessor(prompt string, bridge *modelbridge.ModelBridge) *NormalPostprocessor {
@@ -162,7 +162,7 @@ func newNormalPostprocessor(prompt string, bridge *modelbridge.ModelBridge) *Nor
 		promptTemplate: prompt,
 		bridge:         bridge,
 		Logger:         logger.GetLogger().WithComponent("normal_postprocessor"),
-		config:         &config.ModelConfig{Model: "gpt-3.5-turbo"}, // Set default model
+		config:         &config.ModelConfig{}, // 初始化 config 字段
 	}
 }
 
@@ -188,9 +188,9 @@ func (p *NormalPostprocessor) Execute(ctx context.Context, data *Payload) error 
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	// Create model request with proper model
+	// Create model request with the same model as the original request
 	req := &models.ChatCompletionRequest{
-		Model: p.config.Model, // Use config model
+		Model: data.OriginalRequest.Model,
 		Messages: []models.ChatCompletionMessage{
 			{Role: "system", Content: buf.String()},
 			{Role: "user", Content: data.IntermContent},

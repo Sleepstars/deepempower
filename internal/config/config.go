@@ -10,6 +10,7 @@ import (
 type PipelineConfig struct {
 	Prompts PromptsConfig `yaml:"prompts"`
 	Models  ModelsConfig  `yaml:"models"`
+	APIKey  string        `yaml:"api_key"`
 }
 
 // PromptsConfig contains prompt templates for different stages

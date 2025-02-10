@@ -30,3 +30,6 @@ prompts:
     generate a clear and concise response:
     Reasoning: ${reasoning_chain}
     Result: ${intermediate_result}
+
+# 添加 API 密钥配置
+api_key: "your-api-key-here"

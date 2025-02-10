@@ -89,19 +89,6 @@ go build -o deepempower ./cmd/server
 ./deepempower
 ```
 
-### 多平台构建
-```bash
-# 构建所有支持的平台
-make release-build
-
-# 支持的平台包括：
-# - linux/amd64
-# - linux/arm64
-# - darwin/amd64
-# - darwin/arm64
-# - windows/amd64
-```
-
 ### Docker 构建和运行
 ```bash
 # 构建 Docker 镜像
@@ -119,37 +106,6 @@ docker logs -f deepempower
 
 # 停止容器
 docker stop deepempower
-```
-
-### GitHub Actions CI/CD
-
-本项目使用 GitHub Actions 实现自动化的测试、构建和发布流程：
-
-1. **自动化测试和构建**
-   - 每次提交都会触发测试
-   - 自动构建多平台二进制文件
-   - 构建结果保存为 Artifacts
-
-2. **Docker 镜像发布**
-   - 当创建新的版本标签（v*）时触发
-   - 自动构建多架构 Docker 镜像
-   - 推送至 GitHub Container Registry (ghcr.io)
-
-### 发布新版本
-
-1. 使用 make 命令创建新的版本标签：
-```bash
-make release-tag TAG=v1.0.0
-```
-
-2. 等待 GitHub Actions 完成：
-   - 自动构建多平台二进制文件
-   - 构建并推送 Docker 镜像到 ghcr.io
-   - 在 GitHub Releases 页面查看发布状态
-
-3. 拉取最新版本 Docker 镜像：
-```bash
-docker pull ghcr.io/[username]/deepempower:1.0.0
 ```
 
 ### 环境变量

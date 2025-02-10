@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
@@ -11,14 +12,32 @@ import (
 )
 
 func main() {
-	// TODO: Load configuration from file
-	cfg := &config.PipelineConfig{}
+	// 解析命令行标志
+	configPath := flag.String("config", "/etc/deepempower/configs/test_config.yaml", "Path to the configuration file")
+	flag.Parse()
+
+	// Load configuration from file
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Create pipeline
 	pipeline := orchestrator.NewHybridPipeline(cfg)
 
 	// Setup router
 	r := gin.Default()
+
+	// Middleware to check API key
+	r.Use(func(c *gin.Context) {
+		apiKey := c.GetHeader("Authorization")
+		if apiKey != cfg.APIKey {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 
 	// Chat completions endpoint
 	r.POST("/v1/chat/completions", func(c *gin.Context) {
