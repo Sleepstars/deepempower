@@ -3,7 +3,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // MockModelClient implements ModelClient interface for testing

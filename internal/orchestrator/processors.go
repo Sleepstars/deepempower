@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/codeium/deepempower/internal/config" // 导入 config 包
-	"github.com/codeium/deepempower/internal/logger"
-	"github.com/codeium/deepempower/internal/modelbridge"
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/config" // 导入 config 包
+	"github.com/sleepstars/deepempower/internal/logger"
+	"github.com/sleepstars/deepempower/internal/modelbridge"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // NormalPreprocessor implements the preprocessing stage using Normal model

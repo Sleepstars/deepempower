@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // NormalClient implements ModelClient for the Normal (Claude) model

@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codeium/deepempower/internal/config"
-	"github.com/codeium/deepempower/internal/logger"
-	"github.com/codeium/deepempower/internal/mocks"
-	"github.com/codeium/deepempower/internal/modelbridge"
-	"github.com/codeium/deepempower/internal/models"
-	"github.com/codeium/deepempower/internal/orchestrator"
+	"github.com/sleepstars/deepempower/internal/config"
+	"github.com/sleepstars/deepempower/internal/logger"
+	"github.com/sleepstars/deepempower/internal/mocks"
+	"github.com/sleepstars/deepempower/internal/modelbridge"
+	"github.com/sleepstars/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/orchestrator"
 	"github.com/stretchr/testify/assert"
 )
 

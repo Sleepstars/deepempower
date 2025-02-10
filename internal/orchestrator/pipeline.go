@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codeium/deepempower/internal/clients"
-	"github.com/codeium/deepempower/internal/config"
-	"github.com/codeium/deepempower/internal/logger"
-	"github.com/codeium/deepempower/internal/modelbridge"
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/clients"
+	"github.com/sleepstars/deepempower/internal/config"
+	"github.com/sleepstars/deepempower/internal/logger"
+	"github.com/sleepstars/deepempower/internal/modelbridge"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // Payload represents the data passed between pipeline stages

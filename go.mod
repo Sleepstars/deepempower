@@ -1,4 +1,4 @@
-module github.com/codeium/deepempower
+module github.com/sleepstars/deepempower
 
 go 1.21
 

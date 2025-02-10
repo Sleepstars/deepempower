@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // ReasonerClient implements ModelClient for the Reasoner (R1) model

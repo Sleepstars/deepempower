@@ -3,7 +3,7 @@ package clients
 import (
 	"context"
 
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // ModelClient defines the interface for model API clients

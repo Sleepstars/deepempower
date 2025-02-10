@@ -7,9 +7,9 @@ import (
 
 	"sync"
 
-	"github.com/codeium/deepempower/internal/logger"
-	"github.com/codeium/deepempower/internal/mocks"
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/logger"
+	"github.com/sleepstars/deepempower/internal/mocks"
+	"github.com/sleepstars/deepempower/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -5,10 +5,10 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/codeium/deepempower/internal/config"
-	"github.com/codeium/deepempower/internal/models"
-	"github.com/codeium/deepempower/internal/orchestrator"
 	"github.com/gin-gonic/gin"
+	"github.com/sleepstars/deepempower/internal/config"
+	"github.com/sleepstars/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/orchestrator"
 )
 
 func main() {

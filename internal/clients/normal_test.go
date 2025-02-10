@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/codeium/deepempower/internal/clients"
-	"github.com/codeium/deepempower/internal/logger"
-	"github.com/codeium/deepempower/internal/models"
+	"github.com/sleepstars/deepempower/internal/clients"
+	"github.com/sleepstars/deepempower/internal/logger"
+	"github.com/sleepstars/deepempower/internal/models"
 )
 
 // ModelBridge handles model-specific logic and provides a unified interface
